@@ -2957,4 +2957,3 @@ var App = {
 App.init();
 
 App.setVersion();
->>>>>>> 2eb06e4818ffb781d6e4733ab443aae2e44cacdb
