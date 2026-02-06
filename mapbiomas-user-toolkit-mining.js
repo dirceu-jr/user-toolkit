@@ -97,6 +97,50 @@ var Area = {
             );
 
         return areas;
+    },
+
+    /**
+     * Calculate areas for multiple bands in a single reduce operation
+     * This is more efficient than calling calculate() for each band separately
+     * @param object containing: image, bandIds, territory, geometry, scale, factor, unit, classNames
+     */
+    calculateBatch: function (object) {
+        var reducer = ee.Reducer.sum().group(1, 'class').group(1, 'territory');
+        var pixelArea = ee.Image.pixelArea().divide(object.factor);
+
+        // Process all bands in a single server-side operation
+        var bandIds = ee.List(object.bandIds);
+        var classNamesDict = ee.Dictionary(object.classNames);
+
+        var allAreas = bandIds.map(function (band) {
+            band = ee.String(band);
+            var image = object.image.select([band]);
+
+            var territotiesData = pixelArea.addBands(object.territory).addBands(image)
+                .reduceRegion({
+                    reducer: reducer,
+                    geometry: object.geometry,
+                    scale: object.scale,
+                    maxPixels: 1e13
+                });
+
+            territotiesData = ee.List(territotiesData.get('groups'));
+
+            var areas = territotiesData.map(Area.convert2table);
+
+            areas = ee.FeatureCollection(areas).flatten()
+                .map(function (feature) {
+                    var className = classNamesDict.get(ee.Number(feature.get('class')));
+                    return feature
+                        .set('unit', object.unit)
+                        .set('class_name', className)
+                        .set('band', band);
+                });
+
+            return areas;
+        });
+
+        return ee.FeatureCollection(allAreas).flatten();
     }
 
 };
@@ -1069,7 +1113,7 @@ var App = {
                 }
             }
 
-            // Export table
+            // Export table - using batch calculation for efficiency
             var territory = ee.Image().paint({
                 'featureCollection': ee.FeatureCollection(App.options.activeFeature),
                 'color': 1
@@ -1077,38 +1121,19 @@ var App = {
 
             var geometry = App.options.activeFeature.geometry().bounds();
 
-            var areas = bandIds.map(
-                function (band) {
-
-                    var image = App.options.data[App.options.dataType].select(band);
-
-                    var area = Area.calculate({
-                        "image": image,
-                        "territory": territory,
-                        "geometry": geometry,
-                        "scale": 30,
-                        "factor": 1000000,
-                        "unit": 'kilometers^2'
-                    });
-
-                    area = ee.FeatureCollection(area).map(
-                        function (feature) {
-
-                            var className = ee.Dictionary(App.options.className[App.options.dataType])
-                                .get(ee.Number(feature.get('class')));
-
-                            return feature
-                                .set('class_name', className)
-                                .set('band', band);
-                        }
-                    );
-
-                    return area;
-                }
-            );
-
-            areas = ee.FeatureCollection(areas).flatten();
+            // Use batch calculation instead of individual calls per band
+            var areas = Area.calculateBatch({
+                "image": App.options.data[App.options.dataType],
+                "bandIds": bandIds,
+                "territory": territory,
+                "geometry": geometry,
+                "scale": 30,
+                "factor": 1000000,
+                "unit": 'kilometers^2',
+                "classNames": App.options.className[App.options.dataType]
+            });
             // print(areas);
+
 
             var tableName = [regionName, collectionName, App.options.dataType, featureName, 'area'].join('-');
 
