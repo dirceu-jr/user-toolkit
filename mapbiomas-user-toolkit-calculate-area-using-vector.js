@@ -77,8 +77,14 @@ var mapbiomas = ee.Image(asset).selfMask();
 // Image area in km2
 var pixelArea = ee.Image.pixelArea().divide(1000000);
 
-// Geometry to export
-var geometry = mapbiomas.geometry();
+// Pre-rasterize territory collection ONCE (Optimization #3)
+// This avoids recreating a territory image for each feature in each year
+var territoryImage = territory
+    .reduceToImage([attribute], ee.Reducer.first())
+    .rename('territory');
+
+// Use territory bounds instead of full mapbiomas extent
+var geometry = territory.geometry();
 
 /**
  * Convert a complex ob to feature collection
@@ -118,11 +124,16 @@ var convert2table = function (obj) {
  * @param territory 
  * @param geometry
  */
-var calculateArea = function (image, territory, geometry) {
+/**
+ * Calculate area for ALL territories at once using pre-rasterized territory image
+ * (Optimization #1: Batch processing instead of per-feature)
+ * @param image - The classification image for a specific year
+ */
+var calculateArea = function (image) {
 
     var reducer = ee.Reducer.sum().group(1, 'class').group(1, 'territory');
 
-    var territotiesData = pixelArea.addBands(territory).addBands(image)
+    var territoriesData = pixelArea.addBands(territoryImage).addBands(image)
         .reduceRegion({
             reducer: reducer,
             geometry: geometry,
@@ -130,42 +141,45 @@ var calculateArea = function (image, territory, geometry) {
             maxPixels: 1e12
         });
 
-    territotiesData = ee.List(territotiesData.get('groups'));
+    territoriesData = ee.List(territoriesData.get('groups'));
 
-    var areas = territotiesData.map(convert2table);
+    var areas = territoriesData.map(convert2table);
 
     areas = ee.FeatureCollection(areas).flatten();
 
     return areas;
 };
 
+// Create a mask to filter only the classes we're interested in (Optimization #2)
+// This replaces the redundant remap(classIds, classIds, 0) that mapped values to themselves
+var classIdsList = ee.List(classIds);
+var createClassMask = function(image) {
+    // Keep only pixels with class IDs in our list, set others to 0
+    var mask = classIdsList.iterate(function(classId, acc) {
+        return ee.Image(acc).or(image.eq(ee.Number(classId)));
+    }, ee.Image(0));
+    return image.updateMask(mask);
+};
+
+// Process all years with batch territory processing (Optimization #1)
 var areas = years.map(
     function (year) {
         var image = mapbiomas.select('classification_' + year);
+        
+        // Apply class filter instead of redundant remap
+        image = createClassMask(image);
 
-        var areas = territory.map(
-            function (feature) {
-                return calculateArea(
-                    image.remap(classIds, classIds, 0),
-                    ee.Image().int64().paint({
-                        'featureCollection': ee.FeatureCollection(feature),
-                        'color': attribute
-                    }),
-                    feature.geometry()
-                );
-            }
-        );
+        // Single reduceRegion call processes ALL territories at once
+        var yearAreas = calculateArea(image);
 
-        areas = areas.flatten();
-
-        // set additional properties
-        areas = areas.map(
+        // Set year property
+        yearAreas = yearAreas.map(
             function (feature) {
                 return feature.set('year', year);
             }
         );
 
-        return areas;
+        return yearAreas;
     }
 );
 
