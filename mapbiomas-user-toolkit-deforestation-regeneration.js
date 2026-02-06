@@ -641,6 +641,17 @@ var App = {
             'secondary_vegetation_age': null
         },
 
+        // Cached processed data (after divide/byte operations)
+        processedData: {
+            'deforestation_sec_vegetation': null
+        },
+
+        // Deferred asset paths (loaded on first access)
+        assetPaths: {
+            'deforestation_sec_vegetation': null,
+            'secondary_vegetation_age': null
+        },
+
         fileDimensions: {
             'deforestation_sec_vegetation': 256 * 124,
             'deforestation_pv': 256 * 124,
@@ -825,6 +836,36 @@ var App = {
 
     },
 
+    /**
+     * Get processed deforestation data (with divide/byte cached)
+     * Loads asset if not already loaded
+     */
+    getProcessedData: function (dataType) {
+        // Load asset if needed (deferred loading)
+        if (App.options.data[dataType] === null && App.options.assetPaths[dataType]) {
+            App.options.data[dataType] = ee.Image(App.options.assetPaths[dataType]);
+            
+            // Rename bands if needed for deforestation_sec_vegetation
+            if (dataType === 'deforestation_sec_vegetation') {
+                var bandNames = App.options.data[dataType].bandNames()
+                    .map(function (band) {
+                        return ee.String(band).replace('product', 'classification');
+                    });
+                App.options.data[dataType] = App.options.data[dataType].rename(bandNames);
+            }
+        }
+        
+        // Return cached processed version for deforestation_sec_vegetation
+        if (dataType === 'deforestation_sec_vegetation') {
+            if (App.options.processedData[dataType] === null && App.options.data[dataType] !== null) {
+                App.options.processedData[dataType] = App.options.data[dataType].divide(100).byte();
+            }
+            return App.options.processedData[dataType];
+        }
+        
+        return App.options.data[dataType];
+    },
+
     setVersion: function () {
 
         App.ui.form.labelTitle.setValue('MapBiomas User Toolkit ' + App.options.version);
@@ -833,10 +874,12 @@ var App = {
 
     startMap: function (year) {
 
-        Map.centerObject(App.options.data.deforestation_sec_vegetation, 5);
+        var processedData = App.getProcessedData('deforestation_sec_vegetation');
+        
+        Map.centerObject(processedData, 5);
 
         var imageLayer = ui.Map.Layer({
-            'eeObject': App.options.data.deforestation_sec_vegetation.divide(100).byte(),
+            'eeObject': processedData,
             'visParams': {
                 'bands': ['classification_' + year],
                 'palette': App.options.palette.deforestation_sec_vegetation,
@@ -925,44 +968,27 @@ var App = {
                 'onChange': function (collectioName) {
                     ee.Number(1).evaluate(
                         function (a) {
-                            // App.options.data.deforestation_pv = ee.Image(
-                            //     App.options.collections[regionName][collectioName].assets.deforestation_pv);
-
-                            // App.options.data.deforestation_sv = ee.Image(
-                            //     App.options.collections[regionName][collectioName].assets.deforestation_sv);
-
-                            // App.options.data.secondary_vegetation = ee.Image(
-                            //     App.options.collections[regionName][collectioName].assets.secondary_vegetation);
-
+                            // Reset cached data when collection changes
+                            App.options.data.deforestation_sec_vegetation = null;
+                            App.options.data.secondary_vegetation_age = null;
+                            App.options.processedData.deforestation_sec_vegetation = null;
                             
-                            App.options.data.deforestation_sec_vegetation = ee.Image(
-                                App.options.collections[regionName][collectioName].assets.deforestation_sec_vegetation);
-                                
-                            if (collectioName == 'collection-7.1') {
-                                App.options.data.secondary_vegetation_age = ee.Image(
-                                    App.options.collections[regionName][collectioName].assets.secondary_vegetation_age);
+                            // Store asset paths for deferred loading (optimization #1)
+                            App.options.assetPaths.deforestation_sec_vegetation = 
+                                App.options.collections[regionName][collectioName].assets.deforestation_sec_vegetation;
+                            
+                            if (collectioName == 'collection-7.1' || collectioName == 'collection-8.0' || collectioName == 'collection-9.0') {
+                                App.options.assetPaths.secondary_vegetation_age = 
+                                    App.options.collections[regionName][collectioName].assets.secondary_vegetation_age;
                             }
 
-                            if (collectioName == 'collection-8.0') {
-                                App.options.data.secondary_vegetation_age = ee.Image(
-                                    App.options.collections[regionName][collectioName].assets.secondary_vegetation_age);
-                            }
+                            // Trigger deferred loading for initial map display
+                            App.getProcessedData('deforestation_sec_vegetation');
 
-                            //
-                            var bandNames = App.options.data.deforestation_sec_vegetation.bandNames()
-                                .map(
-                                    function (band) {
-                                        return ee.String(band).replace('product', 'classification');
-                                    }
-                                )
-
-                            App.options.data.deforestation_sec_vegetation = App.options.data.deforestation_sec_vegetation.rename(bandNames);
-
-                            //
                             var year = App.options.collections[regionName][collectioName]
                                 .periods.secondary_vegetation.slice(-1)[0];
 
-                            App.options.selectedCollection = collectioName
+                            App.options.selectedCollection = collectioName;
                             App.startMap(year);
                         }
                     );
@@ -1238,14 +1264,16 @@ var App = {
         addImageLayer: function (period, label, region) {
 
 
+            var image;
+            
             if (App.options.selectedDataType == 'deforestation_sec_vegetation'){
-
-                var image = App.options.data[App.options.dataType]
+                // Use cached processed data (optimization #2)
+                var processedData = App.getProcessedData('deforestation_sec_vegetation');
+                image = processedData
                     .select([App.options.bandsNames[App.options.dataType] + period])
-                    .divide(100).byte()
                     .clip(region);
             } else {
-                var image = App.options.data[App.options.dataType]
+                image = App.options.data[App.options.dataType]
                     .select([App.options.bandsNames[App.options.dataType] + period])
                     .clip(region);
             }
