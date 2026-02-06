@@ -40,15 +40,17 @@ var exportBands = [
       "blue_median",
       "green_median",
       "red_median",
-      "bir_median",
+      "nir_median",
       "swir1_median",
       "swir2_median",
   ];
 
 // Get the moisac
 var mosaic = ee.ImageCollection(asset)
-               .filterMetadata('biome', 'equals', biome)
-               .filterMetadata('year', 'equals', year)
+               .filter(ee.Filter.and(
+                   ee.Filter.eq('biome', biome),
+                   ee.Filter.eq('year', year)
+               ))
                .filterBounds(geometry)
                .mosaic();
 
@@ -71,7 +73,7 @@ Map.centerObject(geometry);
 // Exports the data to MAPBIOMAS-EXPORT folder in your Google Drive
 Export.image.toDrive(
       {
-        'image': mosaic.int32(), 
+        'image': mosaic.select(exportBands).int32(), 
         'description': fileName, 
         'folder': 'MAPBIOMAS-EXPORT', 
         'fileNamePrefix': fileName,
