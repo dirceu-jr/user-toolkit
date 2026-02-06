@@ -28,6 +28,12 @@ var palettes = require('users/mapbiomas/modules:Palettes.js');
 var fire_palettes = require('users/workspaceipam/packages:mapbiomas-toolkit/utils/palettes');
 var logos = require('users/workspaceipam/packages:mapbiomas-toolkit/utils/b64');
 
+// OPTIMIZATION: Cache frequently used palettes to avoid redundant lookups
+var CACHED_PALETTES = {
+  classification9: palettes.get('classification9'),
+  classification8: palettes.get('classification8')
+};
+
 /**
  * @description
  *    calculate area for mapbiomas fire map
@@ -113,82 +119,104 @@ var landcover_remap = landcover.remap(mb_landcover_values, mb_vegNat_values, 0);
 var vis = {
   'min': 0,
   'max': 62,
-  'palette': require('users/mapbiomas/modules:Palettes.js').get('classification8'),
+  'palette': CACHED_PALETTES.classification8,
   'bands':['classification_2022']
 };
 
 var landcover_base = landcover_remap.gte(1);
-// Map.addLayer(landcover, vis, 'landcover',false);
-// Map.addLayer(landcover_base, {min:0,max:1,palette:['#AAAADD','#7DCEB8']}, 'landcover_base',false);
 
-
-// OPTIMIZATION: Using ImageCollection.mosaic() instead of chained .blend() operations
-// Load all edge images as a collection - order matters (last image takes priority where they overlap)
-var edgeAreaImages = ee.ImageCollection([
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_30m_v3').gt(1).multiply(1),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_60m_v3').gt(1).multiply(2),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_90m_v3').gt(1).multiply(3),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_120m_v3').gt(1).multiply(4),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_150m_v3').gt(1).multiply(5),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_300m_v3').gt(1).multiply(6),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_600m_v3').gt(1).multiply(7),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_1000m_v3').gt(1).multiply(8)
-]);
-var bordasArea = landcover_base.where(landcover_base.eq(1), 9)
-  .blend(edgeAreaImages.mosaic());
-
-// OPTIMIZATION: Using ImageCollection.mosaic() instead of chained .blend() operations
-var fragmentSizeImages = ee.ImageCollection([
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_3ha_v3').gt(1).multiply(1),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_5ha_v3').gt(1).multiply(2),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_10ha_v3').gt(1).multiply(3),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_25ha_v3').gt(1).multiply(4),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_50ha_v3').gt(1).multiply(5),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_75ha_v3').gt(1).multiply(6)
-]);
-var fragmentSize = landcover_base.where(landcover_base.eq(1), 7)
-  .blend(fragmentSizeImages.mosaic());
-
-// OPTIMIZATION: Using ImageCollection.max() instead of chained .where() operations
-var distances100haImages = ee.ImageCollection([
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__100_v6_85_22').selfMask().multiply(0).add(2),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__100_v6_85_22').selfMask().multiply(0).add(3),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__100_v6_85_22').selfMask().multiply(0).add(5),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__100_v6_85_22').selfMask().multiply(0).add(6),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__100_v6_85_22').selfMask().multiply(0).add(8),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__100_v6_85_22').selfMask().multiply(0).add(9),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior100ha_v5_85_22').selfMask().multiply(0).add(10)
-]);
-var distances100ha = distances100haImages.max().unmask(0);
-
-// OPTIMIZATION: Using ImageCollection.max() instead of chained .where() operations
-var distances500haImages = ee.ImageCollection([
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__500_v6_85_22').selfMask().multiply(0).add(1),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__500_v6_85_22').selfMask().multiply(0).add(2),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__500_v6_85_22').selfMask().multiply(0).add(3),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__500_v6_85_22').selfMask().multiply(0).add(4),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__500_v6_85_22').selfMask().multiply(0).add(5),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__500_v6_85_22').selfMask().multiply(0).add(6),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__500_v6_85_22').selfMask().multiply(0).add(8),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__500_v6_85_22').selfMask().multiply(0).add(9),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior500ha_v5_85_22').selfMask().multiply(0).add(11)
-]);
-var distances500ha = distances500haImages.max().unmask(0);
-
-// OPTIMIZATION: Using ImageCollection.max() instead of chained .where() operations
-var distances1000haImages = ee.ImageCollection([
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__1000_v6_85_22').selfMask().multiply(0).add(1),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__1000_v6_85_22').selfMask().multiply(0).add(2),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__1000_v6_85_22').selfMask().multiply(0).add(3),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__1000_v6_85_22').selfMask().multiply(0).add(4),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__1000_v6_85_22').selfMask().multiply(0).add(5),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__1000_v6_85_22').selfMask().multiply(0).add(6),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist20k__1000_v6_85_22').selfMask().multiply(0).add(7),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__1000_v6_85_22').selfMask().multiply(0).add(8),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__1000_v6_85_22').selfMask().multiply(0).add(9),
-  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior1000ha_v5_85_22').selfMask().multiply(0).add(12)
-]);
-var distances1000ha = distances1000haImages.max().unmask(0);
+// OPTIMIZATION: Lazy-loading asset builders - assets are only computed when accessed
+// This defers the heavy computation until the user actually selects a collection
+var LazyAssets = {
+  _cache: {},
+  
+  getBordasArea: function() {
+    if (!this._cache.bordasArea) {
+      var edgeAreaImages = ee.ImageCollection([
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_30m_v3').gt(1).multiply(1),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_60m_v3').gt(1).multiply(2),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_90m_v3').gt(1).multiply(3),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_120m_v3').gt(1).multiply(4),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_150m_v3').gt(1).multiply(5),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_300m_v3').gt(1).multiply(6),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_600m_v3').gt(1).multiply(7),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_1000m_v3').gt(1).multiply(8)
+      ]);
+      this._cache.bordasArea = landcover_base.where(landcover_base.eq(1), 9)
+        .blend(edgeAreaImages.mosaic());
+    }
+    return this._cache.bordasArea;
+  },
+  
+  getFragmentSize: function() {
+    if (!this._cache.fragmentSize) {
+      var fragmentSizeImages = ee.ImageCollection([
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_3ha_v3').gt(1).multiply(1),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_5ha_v3').gt(1).multiply(2),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_10ha_v3').gt(1).multiply(3),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_25ha_v3').gt(1).multiply(4),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_50ha_v3').gt(1).multiply(5),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_75ha_v3').gt(1).multiply(6)
+      ]);
+      this._cache.fragmentSize = landcover_base.where(landcover_base.eq(1), 7)
+        .blend(fragmentSizeImages.mosaic());
+    }
+    return this._cache.fragmentSize;
+  },
+  
+  getDistances100ha: function() {
+    if (!this._cache.distances100ha) {
+      var distances100haImages = ee.ImageCollection([
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__100_v6_85_22').selfMask().multiply(0).add(2),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__100_v6_85_22').selfMask().multiply(0).add(3),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__100_v6_85_22').selfMask().multiply(0).add(5),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__100_v6_85_22').selfMask().multiply(0).add(6),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__100_v6_85_22').selfMask().multiply(0).add(8),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__100_v6_85_22').selfMask().multiply(0).add(9),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior100ha_v5_85_22').selfMask().multiply(0).add(10)
+      ]);
+      this._cache.distances100ha = distances100haImages.max().unmask(0);
+    }
+    return this._cache.distances100ha;
+  },
+  
+  getDistances500ha: function() {
+    if (!this._cache.distances500ha) {
+      var distances500haImages = ee.ImageCollection([
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__500_v6_85_22').selfMask().multiply(0).add(1),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__500_v6_85_22').selfMask().multiply(0).add(2),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__500_v6_85_22').selfMask().multiply(0).add(3),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__500_v6_85_22').selfMask().multiply(0).add(4),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__500_v6_85_22').selfMask().multiply(0).add(5),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__500_v6_85_22').selfMask().multiply(0).add(6),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__500_v6_85_22').selfMask().multiply(0).add(8),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__500_v6_85_22').selfMask().multiply(0).add(9),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior500ha_v5_85_22').selfMask().multiply(0).add(11)
+      ]);
+      this._cache.distances500ha = distances500haImages.max().unmask(0);
+    }
+    return this._cache.distances500ha;
+  },
+  
+  getDistances1000ha: function() {
+    if (!this._cache.distances1000ha) {
+      var distances1000haImages = ee.ImageCollection([
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__1000_v6_85_22').selfMask().multiply(0).add(1),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__1000_v6_85_22').selfMask().multiply(0).add(2),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__1000_v6_85_22').selfMask().multiply(0).add(3),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__1000_v6_85_22').selfMask().multiply(0).add(4),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__1000_v6_85_22').selfMask().multiply(0).add(5),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__1000_v6_85_22').selfMask().multiply(0).add(6),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist20k__1000_v6_85_22').selfMask().multiply(0).add(7),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__1000_v6_85_22').selfMask().multiply(0).add(8),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__1000_v6_85_22').selfMask().multiply(0).add(9),
+        ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior1000ha_v5_85_22').selfMask().multiply(0).add(12)
+      ]);
+      this._cache.distances1000ha = distances1000haImages.max().unmask(0);
+    }
+    return this._cache.distances1000ha;
+  }
+};
 
 // Adicionando os objetos ao dicionário assetsConfig
 var assetsConfig = {
@@ -216,7 +244,8 @@ var assetsConfig = {
     theme: 'DEGRADATION',
     source: 'MAPBIOMAS',
     pixel: 'Classe referente a faixas da área de borda da vegetação nativa.',
-    eeObject: bordasArea
+    // OPTIMIZATION: Using getter for lazy loading
+    getEeObject: function() { return LazyAssets.getBordasArea(); }
   },
   
   fragmentSize: {
@@ -241,7 +270,8 @@ var assetsConfig = {
     theme: 'DEGRADATION',
     source: 'MAPBIOMAS',
     pixel: 'Classe referente ao tamanho do fragmento de vegetação nativa.',
-    eeObject: fragmentSize
+    // OPTIMIZATION: Using getter for lazy loading
+    getEeObject: function() { return LazyAssets.getFragmentSize(); }
   },
   
   distances100ha: {
@@ -271,7 +301,8 @@ var assetsConfig = {
     theme: 'DEGRADATION',
     source: 'MAPBIOMAS',
     pixel: 'Classe de distância do fragmento alvo da fonte de vegetação nativa.',
-    eeObject: distances100ha
+    // OPTIMIZATION: Using getter for lazy loading
+    getEeObject: function() { return LazyAssets.getDistances100ha(); }
   },
 
   distances500ha: {
@@ -304,7 +335,8 @@ var assetsConfig = {
     theme: 'DEGRADATION',
     source: 'MAPBIOMAS',
     pixel: 'Classe de distância do fragmento alvo da fonte de vegetação nativa.',
-    eeObject: distances500ha
+    // OPTIMIZATION: Using getter for lazy loading
+    getEeObject: function() { return LazyAssets.getDistances500ha(); }
   },
 
   distances1000ha: {
@@ -337,16 +369,11 @@ var assetsConfig = {
     theme: 'DEGRADATION',
     source: 'MAPBIOMAS',
     pixel: 'Classe de distância do fragmento alvo da fonte de vegetação nativa.',
-    eeObject: distances1000ha
+    // OPTIMIZATION: Using getter for lazy loading
+    getEeObject: function() { return LazyAssets.getDistances1000ha(); }
   }
 };
 
-
-assetsConfig.bordasArea
-assetsConfig.fragmentSize
-assetsConfig.distances100ha
-assetsConfig.distances500ha
-assetsConfig.distances1000ha
 /**
  * 
  */
@@ -438,7 +465,7 @@ var App = {
             'mapbiomas-brazil': {
             'degradation BETA: edge area': {
                 'assets': {
-                  'edge_classes':assetsConfig.bordasArea.eeObject,
+                  'edge_classes':assetsConfig.bordasArea.getEeObject(),
                   'edge_30m':'projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_30m_v3',
                   'edge_60m':'projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_60m_v3',
                   'edge_90m':'projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_90m_v3',
@@ -463,7 +490,7 @@ var App = {
             },
             'degradation BETA: patch size': {
                 'assets': {
-                  'size_classes':assetsConfig.fragmentSize.eeObject,
+                  'size_classes':assetsConfig.fragmentSize.getEeObject(),
                   'size_3ha':'projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_3ha_v3',
                   'size_5ha':'projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_5ha_v3',
                   'size_10ha':'projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_10ha_v3',
@@ -484,9 +511,9 @@ var App = {
             },
             'degradation BETA: patch isolation': {
                 'assets': {
-                  'distance_classes_100ha':assetsConfig.distances100ha.eeObject,
-                  'distance_classes_500ha':assetsConfig.distances500ha.eeObject,
-                  'distance_classes_1000ha':assetsConfig.distances1000ha.eeObject,
+                  'distance_classes_100ha':assetsConfig.distances100ha.getEeObject(),
+                  'distance_classes_500ha':assetsConfig.distances500ha.getEeObject(),
+                  'distance_classes_1000ha':assetsConfig.distances1000ha.getEeObject(),
                   'Target lte_25ha Distance lte_05km Source gte_100ha':'projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__100_v6_85_22',
                   'Target lte_25ha Distance lte_05km Source gte_500ha':'projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__500_v6_85_22',
                   'Target lte_25ha Distance lte_05km Source gte_1000ha':'projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__1000_v6_85_22',
@@ -708,52 +735,53 @@ var App = {
           "distance_classes_500ha":assetsConfig.distances500ha.visParams.palette,
           "distance_classes_1000ha":assetsConfig.distances1000ha.visParams.palette,
 
-          "edge_30m":palettes.get('classification9'),
-          "edge_60m":palettes.get('classification9'),
-          "edge_90m":palettes.get('classification9'),
-          "edge_120m":palettes.get('classification9'),
-          "edge_150m":palettes.get('classification9'),
-          "edge_600m":palettes.get('classification9'),
-          "edge_300m":palettes.get('classification9'),
-          "edge_1000m":palettes.get('classification9'),
+          // OPTIMIZATION: Using cached palette instead of 29 separate lookups
+          "edge_30m":CACHED_PALETTES.classification9,
+          "edge_60m":CACHED_PALETTES.classification9,
+          "edge_90m":CACHED_PALETTES.classification9,
+          "edge_120m":CACHED_PALETTES.classification9,
+          "edge_150m":CACHED_PALETTES.classification9,
+          "edge_600m":CACHED_PALETTES.classification9,
+          "edge_300m":CACHED_PALETTES.classification9,
+          "edge_1000m":CACHED_PALETTES.classification9,
 
-          "size_3ha":palettes.get('classification9'),
-          "size_5ha":palettes.get('classification9'),
-          "size_10ha":palettes.get('classification9'),
-          "size_25ha":palettes.get('classification9'),
-          "size_50ha":palettes.get('classification9'),
-          "size_75ha":palettes.get('classification9'),
+          "size_3ha":CACHED_PALETTES.classification9,
+          "size_5ha":CACHED_PALETTES.classification9,
+          "size_10ha":CACHED_PALETTES.classification9,
+          "size_25ha":CACHED_PALETTES.classification9,
+          "size_50ha":CACHED_PALETTES.classification9,
+          "size_75ha":CACHED_PALETTES.classification9,
 
-          "Target lte_25ha Distance lte_05km Source gte_100ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_05km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_05km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_10km Source gte_100ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_10km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_10km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_20km Source gte_100ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_20km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_25ha Distance lte_20km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_05km Source gte_100ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_05km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_05km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_10km Source gte_100ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_10km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_10km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_20km Source gte_100ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_20km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_50ha Distance lte_20km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_100ha Distance lte_05km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_100ha Distance lte_05km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_100ha Distance lte_10km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_100ha Distance lte_10km Source gte_1000ha":palettes.get('classification9'),
-          "Target lte_100ha Distance lte_20km Source gte_500ha":palettes.get('classification9'),
-          "Target lte_100ha Distance lte_20km Source gte_1000ha":palettes.get('classification9'),
+          "Target lte_25ha Distance lte_05km Source gte_100ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_05km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_05km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_10km Source gte_100ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_10km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_10km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_20km Source gte_100ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_20km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_25ha Distance lte_20km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_05km Source gte_100ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_05km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_05km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_10km Source gte_100ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_10km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_10km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_20km Source gte_100ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_20km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_50ha Distance lte_20km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_100ha Distance lte_05km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_100ha Distance lte_05km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_100ha Distance lte_10km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_100ha Distance lte_10km Source gte_1000ha":CACHED_PALETTES.classification9,
+          "Target lte_100ha Distance lte_20km Source gte_500ha":CACHED_PALETTES.classification9,
+          "Target lte_100ha Distance lte_20km Source gte_1000ha":CACHED_PALETTES.classification9,
           
           "frequency":fire_palettes.get('frequencia_2'),
           "age":fire_palettes.get('ano_do_ultimo_fogo_2'),
-          "accumulated_burned_coverage":palettes.get('classification9'),
+          "accumulated_burned_coverage":CACHED_PALETTES.classification9,
           "secondary_age":fire_palettes.get('vegetacao_secundaria'),
-          "secondary_coverage":palettes.get('classification9'),
+          "secondary_coverage":CACHED_PALETTES.classification9,
 
         },
 
