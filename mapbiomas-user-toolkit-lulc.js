@@ -3167,51 +3167,54 @@ var App = {
         return formated;
     },
 
-    remapTransitions: function (image) {
+    // Pre-computed transition lookup cache
+    transitionLookupCache: null,
+
+    // Build transition lookup table (called once, cached)
+    buildTransitionLookup: function () {
+        if (this.transitionLookupCache !== null) {
+            return this.transitionLookupCache;
+        }
+
         var oldValues = [];
         var newValues = [];
 
+        // Category mappings: [categoryArray, remapValue]
+        var categoryMappings = [
+            ['noChange', 0],
+            ['upVeg', 1],
+            ['downVeg', -1],
+            ['downWater', -2],
+            ['upWater', 2],
+            ['upPlantacao', 3],
+            ['ignored', 0]
+        ];
+
         App.options.transitionsCodes.forEach(function (c1) {
             c1.noChange.forEach(function (noChange1) {
-                c1.noChange.forEach(function (noChange2) {
-                    var oldValue = (noChange1 * 100) + noChange2;
-                    oldValues.push(oldValue);
-                    newValues.push(0);
-                });
-                c1.upVeg.forEach(function (upVeg2) {
-                    var oldValue = (noChange1 * 100) + upVeg2;
-                    oldValues.push(oldValue);
-                    newValues.push(1);
-                });
-                c1.downVeg.forEach(function (downVeg2) {
-                    var oldValue = (noChange1 * 100) + downVeg2;
-                    oldValues.push(oldValue);
-                    newValues.push(-1);
-                });
-                c1.downWater.forEach(function (downWater2) {
-                    var oldValue = (noChange1 * 100) + downWater2;
-                    oldValues.push(oldValue);
-                    newValues.push(-2);
-                });
-                c1.upWater.forEach(function (upWater2) {
-                    var oldValue = (noChange1 * 100) + upWater2;
-                    oldValues.push(oldValue);
-                    newValues.push(2);
-                });
-                c1.upPlantacao.forEach(function (upPlantacao2) {
-                    var oldValue = (noChange1 * 100) + upPlantacao2;
-                    oldValues.push(oldValue);
-                    newValues.push(3);
-                });
-                c1.ignored.forEach(function (ignored2) {
-                    var oldValue = (noChange1 * 100) + ignored2;
-                    oldValues.push(oldValue);
-                    newValues.push(0);
+                var base = noChange1 * 100;
+                categoryMappings.forEach(function (mapping) {
+                    var categoryName = mapping[0];
+                    var remapValue = mapping[1];
+                    c1[categoryName].forEach(function (val2) {
+                        oldValues.push(base + val2);
+                        newValues.push(remapValue);
+                    });
                 });
             });
         });
 
-        return image.remap(oldValues, newValues).rename(image.bandNames());
+        this.transitionLookupCache = {
+            oldValues: oldValues,
+            newValues: newValues
+        };
+
+        return this.transitionLookupCache;
+    },
+
+    remapTransitions: function (image) {
+        var lookup = this.buildTransitionLookup();
+        return image.remap(lookup.oldValues, lookup.newValues).rename(image.bandNames());
     },
 
     setPalette: function (region) {
