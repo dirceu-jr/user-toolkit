@@ -44,84 +44,76 @@ var pixelArea = ee.Image.pixelArea().divide(1000000);
 var geometry = mapbiomas.geometry();
 
 /**
- * Convert a complex obj to a feature collection
- * @param obj 
+ * OPTIMIZED: Single reduceRegion() call for all years
+ * 
+ * Strategy: Stack all classification bands into one image, multiply each by 
+ * pixelArea, then reduce all at once. This replaces 36 reduceRegion() calls with 1.
  */
-var convert2table = function (obj) {
 
-    obj = ee.Dictionary(obj);
+// Select all classification bands for the years we need
+var bandNames = years.map(function(year) {
+    return 'classification_' + year;
+});
 
-    var territory = obj.get('territory');
-
-    var classesAndAreas = ee.List(obj.get('groups'));
-
-    var tableRows = classesAndAreas.map(
-        function (classAndArea) {
-            classAndArea = ee.Dictionary(classAndArea);
-
-            var classId = classAndArea.get('class');
-            var area = classAndArea.get('sum');
-
-            var tableColumns = ee.Feature(null)
-                .set('territory', territory)
-                .set('class', classId)
-                .set('area', area);
-
-            return tableColumns;
-        }
-    );
-
-    return ee.FeatureCollection(ee.List(tableRows));
-};
+// Create the image stack: territory + all classification bands weighted by area
+var classificationBands = mapbiomas.select(bandNames);
 
 /**
- * Calculate area crossing a cover map (deforestation, mapbiomas)
- * and a region map (states, biomes, municipalites)
- * @param image 
- * @param territory 
- * @param geometry
+ * Calculate area for all years and territories in a SINGLE reduceRegion call
  */
-var calculateArea = function (image, territory, geometry) {
-
-    var reducer = ee.Reducer.sum().group(1, 'class').group(1, 'territory');
-
-    var territoriesData = pixelArea.addBands(territory).addBands(image)
+var calculateAllAreas = function () {
+    // Create a reducer that computes frequency histogram for each band
+    // grouped by territory. This gives us class counts per territory per year.
+    var reducer = ee.Reducer.frequencyHistogram();
+    
+    // Reduce by territory - get histogram of classes for each band (year)
+    var results = classificationBands.addBands(territory)
         .reduceRegion({
-            reducer: reducer,
+            reducer: reducer.group({
+                groupField: bandNames.length,  // territory band is last
+                groupName: 'territory'
+            }),
             geometry: geometry,
             scale: scale,
             maxPixels: 1e12
         });
-
-    territoriesData = ee.List(territoriesData.get('groups'));
-
-    var areas = territoriesData.map(convert2table);
-
-    areas = ee.FeatureCollection(areas).flatten();
-
-    return areas;
+    
+    var groups = ee.List(results.get('groups'));
+    
+    // Process each territory group
+    var allFeatures = groups.map(function(group) {
+        group = ee.Dictionary(group);
+        var territoryId = group.get('territory');
+        
+        // For each year, extract the histogram and convert to features
+        var yearFeatures = ee.List(bandNames).map(function(bandName) {
+            bandName = ee.String(bandName);
+            var year = bandName.slice(-4);  // Extract year from band name
+            
+            var histogram = ee.Dictionary(group.get(bandName));
+            var classes = histogram.keys();
+            
+            return classes.map(function(classId) {
+                // Histogram gives pixel counts, convert to area
+                var pixelCount = ee.Number(histogram.get(classId));
+                var areaKm2 = pixelCount.multiply(scale).multiply(scale).divide(1000000);
+                
+                return ee.Feature(null)
+                    .set('territory', territoryId)
+                    .set('class', ee.Number.parse(classId))
+                    .set('area', areaKm2)
+                    .set('year', year);
+            });
+        });
+        
+        return yearFeatures.flatten();
+    });
+    
+    return ee.FeatureCollection(allFeatures.flatten());
 };
 
-// Iterate over years, select the classification and calculate area
-var areas = years.map(
-    function (year) {
-        var image = mapbiomas.select('classification_' + year);
-
-        var areas = calculateArea(image, territory, geometry);
-
-        // set additional properties
-        areas = areas.map(
-            function (feature) {
-                return feature.set('year', year);
-            }
-        );
-
-        return areas;
-    }
-);
-
-// Convert a collection of collections into a single collection
-areas = ee.FeatureCollection(areas).flatten();
+// Calculate areas for all years in a single server operation
+var areas = calculateAllAreas();
 
 // Export a csv file to Google Drive
 Export.table.toDrive({
