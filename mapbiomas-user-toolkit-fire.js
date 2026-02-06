@@ -691,6 +691,11 @@ var App = {
         dataType: 'annual_burned',
 
         data: {},
+        
+        // Store asset paths for lazy loading
+        assetPaths: {},
+        currentRegion: null,
+        currentCollection: null,
 
         ranges: {
           'annual_burned':{'min':1,'max':1},
@@ -947,68 +952,17 @@ var App = {
                           
                           var datas = Object.keys(App.options.collections[regionName][collectioName].assets);
                           
-    
-                          datas.forEach(function(key){
-
-                            var mod_100_exception = [''];
-                            var div_100_exception = ['monthly_burned_coverage','fire_frequency_coverage'];
-                            
-                            if (mod_100_exception.indexOf(key) !== -1){
-                              App.options.data[key] = ee.Image(App.options.collections[regionName][collectioName].assets[key]).mod(100).int8();
-                              return ; 
-                            }
-
-                            if (div_100_exception.indexOf(key) !== -1){
-                              App.options.data[key] = ee.Image(App.options.collections[regionName][collectioName].assets[key]).divide(100).int8();
-                              return ;
-                            }
-
-                            if (key === 'fire_monitor'){
-                            // monitor de area queimada sentinel
-                            
-                              var fireMonitor = ee.ImageCollection(
-                                  App.options.collections[regionName]['fire_monitor'].assets.fire_monitor)
-                                  .toBands();
-  
-                              var oldBands = fireMonitor.bandNames();
-                              var year_month = oldBands.iterate(function (current, previous) {
-                                  var newBand = ee.String(current)
-                                      .replace('brazil-', '')
-                                      .replace('_FireMonth', '')
-                                      .replace('-', '_');
-  
-                                  newBand = ee.Algorithms.If({
-                                      condition: newBand.length().eq(6),
-                                      trueCase: newBand.replace('_', '_0'),
-                                      falseCase: newBand
-                                  });
-  
-                                  return ee.List(previous).add(newBand);
-                              }, []);
-  
-                              var newBands = ee.List(year_month).map(function (str) { return ee.String('burned_coverage_').cat(str) });
-  
-                              App.options.collections['mapbiomas-brazil']['fire_monitor'].periods.fire_monitor = ee.List(year_month).sort().getInfo();
-  
-                              App.options.data.fire_monitor = fireMonitor
-                                  .select(oldBands, newBands)
-                                  .gt(0).byte();
-  
-                              return ; 
-                            }
-
-
-                              App.options.data[key] = ee.Image(App.options.collections[regionName][collectioName].assets[key]);
-                            
-                          });
+                          // Store asset paths for lazy loading instead of loading all assets immediately
+                          App.options.assetPaths = App.options.collections[regionName][collectioName].assets;
+                          App.options.currentRegion = regionName;
+                          App.options.currentCollection = collectioName;
+                          
+                          // Clear previously loaded data
+                          App.options.data = {};
                           
                           App.ui.setDataType(datas[0]);
 
-                            var year = App.options.collections[regionName][collectioName].periods[datas[0]].slice(-1)[0];
-
-                            Map.centerObject(App.options.data[Object.keys(App.options.data)[0]].geometry().bounds(), 5);
-
-                            App.ui.loadDataType();
+                          App.ui.loadDataType();
                             
                         }
                     );
@@ -1204,6 +1158,9 @@ var App = {
 
                             App.ui.setDataType(dataType);
                             
+                            // Lazy load the asset only when this data type is selected
+                            App.ui.loadAssetForDataType(dataType);
+                            
                             if (App.ui.form.selectDataType.getValue() !== null){
                               App.ui.makeLayersList(
                                   App.options.activeName.split('/').slice(-1)[0],
@@ -1271,6 +1228,78 @@ var App = {
                 imageLayer
             );
 
+        },
+
+        // Lazy load asset for a specific data type
+        loadAssetForDataType: function (dataType) {
+            var regionName = App.options.currentRegion;
+            var collectionName = App.options.currentCollection;
+            
+            // Skip if already loaded
+            if (App.options.data[dataType]) {
+                return;
+            }
+            
+            // Skip if asset path doesn't exist
+            if (!App.options.assetPaths[dataType]) {
+                return;
+            }
+            
+            var mod_100_exception = [''];
+            var div_100_exception = ['monthly_burned_coverage', 'fire_frequency_coverage'];
+            
+            if (mod_100_exception.indexOf(dataType) !== -1) {
+                App.options.data[dataType] = ee.Image(App.options.assetPaths[dataType]).mod(100).int8();
+                return;
+            }
+            
+            if (div_100_exception.indexOf(dataType) !== -1) {
+                App.options.data[dataType] = ee.Image(App.options.assetPaths[dataType]).divide(100).int8();
+                return;
+            }
+            
+            if (dataType === 'fire_monitor') {
+                // Fire monitor processing - deferred until actually selected
+                var fireMonitor = ee.ImageCollection(
+                    App.options.collections[regionName]['fire_monitor'].assets.fire_monitor)
+                    .toBands();
+                
+                var oldBands = fireMonitor.bandNames();
+                var year_month = oldBands.iterate(function (current, previous) {
+                    var newBand = ee.String(current)
+                        .replace('brazil-', '')
+                        .replace('_FireMonth', '')
+                        .replace('-', '_');
+                    
+                    newBand = ee.Algorithms.If({
+                        condition: newBand.length().eq(6),
+                        trueCase: newBand.replace('_', '_0'),
+                        falseCase: newBand
+                    });
+                    
+                    return ee.List(previous).add(newBand);
+                }, []);
+                
+                var newBands = ee.List(year_month).map(function (str) {
+                    return ee.String('burned_coverage_').cat(str);
+                });
+                
+                App.options.collections['mapbiomas-brazil']['fire_monitor'].periods.fire_monitor = ee.List(year_month).sort().getInfo();
+                
+                App.options.data.fire_monitor = fireMonitor
+                    .select(oldBands, newBands)
+                    .gt(0).byte();
+                
+                return;
+            }
+            
+            // Default case: load image directly
+            App.options.data[dataType] = ee.Image(App.options.assetPaths[dataType]);
+            
+            // Center map on first load
+            if (Object.keys(App.options.data).length === 1) {
+                Map.centerObject(App.options.data[dataType].geometry().bounds(), 5);
+            }
         },
 
         removeImageLayer: function (label) {
