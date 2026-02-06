@@ -107,10 +107,8 @@ var mb_landcover_values  = [3, 4, 5, 6, 9, 11, 12, 13, 15, 20, 21, 23, 24, 25, 2
 var mb_vegNat_values =     [3, 4, 5, 6, 0, 11, 12, 13,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 33,  0,  0,  0,  0,  0,  0,  0, 49, 50,  0];
 
 // Remap land cover classes to native vegetation classes
-var landcover_remap = landcover.multiply(0);
-mb_landcover_values.forEach(function(classe, i) {
-  landcover_remap = landcover_remap.where(landcover.eq(classe), mb_vegNat_values[i]);
-});
+// OPTIMIZATION: Using native remap() instead of forEach + where() loop
+var landcover_remap = landcover.remap(mb_landcover_values, mb_vegNat_values, 0);
 
 var vis = {
   'min': 0,
@@ -124,55 +122,73 @@ var landcover_base = landcover_remap.gte(1);
 // Map.addLayer(landcover_base, {min:0,max:1,palette:['#AAAADD','#7DCEB8']}, 'landcover_base',false);
 
 
+// OPTIMIZATION: Using ImageCollection.mosaic() instead of chained .blend() operations
+// Load all edge images as a collection - order matters (last image takes priority where they overlap)
+var edgeAreaImages = ee.ImageCollection([
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_30m_v3').gt(1).multiply(1),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_60m_v3').gt(1).multiply(2),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_90m_v3').gt(1).multiply(3),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_120m_v3').gt(1).multiply(4),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_150m_v3').gt(1).multiply(5),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_300m_v3').gt(1).multiply(6),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_600m_v3').gt(1).multiply(7),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_1000m_v3').gt(1).multiply(8)
+]);
 var bordasArea = landcover_base.where(landcover_base.eq(1), 9)
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_1000m_v3').gt(1).multiply(8))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_600m_v3').gt(1).multiply(7))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_300m_v3').gt(1).multiply(6))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_150m_v3').gt(1).multiply(5))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_120m_v3').gt(1).multiply(4))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_90m_v3').gt(1).multiply(3))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_60m_v3').gt(1).multiply(2))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/edge_area/edge_30m_v3').gt(1).multiply(1));
+  .blend(edgeAreaImages.mosaic());
 
+// OPTIMIZATION: Using ImageCollection.mosaic() instead of chained .blend() operations
+var fragmentSizeImages = ee.ImageCollection([
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_3ha_v3').gt(1).multiply(1),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_5ha_v3').gt(1).multiply(2),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_10ha_v3').gt(1).multiply(3),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_25ha_v3').gt(1).multiply(4),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_50ha_v3').gt(1).multiply(5),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_75ha_v3').gt(1).multiply(6)
+]);
 var fragmentSize = landcover_base.where(landcover_base.eq(1), 7)
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_75ha_v3').gt(1).multiply(6))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_50ha_v3').gt(1).multiply(5))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_25ha_v3').gt(1).multiply(4))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_10ha_v3').gt(1).multiply(3))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_5ha_v3').gt(1).multiply(2))
-  .blend(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/COLECAO/BETA/PROCESS/patch_size/size_3ha_v3').gt(1).multiply(1));
+  .blend(fragmentSizeImages.mosaic());
 
-var distances100ha = landcover_base.multiply(0)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior100ha_v5_85_22'),10)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__100_v6_85_22'),2)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__100_v6_85_22'),3)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__100_v6_85_22'),5)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__100_v6_85_22'),6)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__100_v6_85_22'),8)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__100_v6_85_22'),9);
+// OPTIMIZATION: Using ImageCollection.max() instead of chained .where() operations
+var distances100haImages = ee.ImageCollection([
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__100_v6_85_22').selfMask().multiply(0).add(2),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__100_v6_85_22').selfMask().multiply(0).add(3),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__100_v6_85_22').selfMask().multiply(0).add(5),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__100_v6_85_22').selfMask().multiply(0).add(6),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__100_v6_85_22').selfMask().multiply(0).add(8),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__100_v6_85_22').selfMask().multiply(0).add(9),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior100ha_v5_85_22').selfMask().multiply(0).add(10)
+]);
+var distances100ha = distances100haImages.max().unmask(0);
 
-var distances500ha = landcover_base.multiply(0)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior500ha_v5_85_22'),11)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__500_v6_85_22'),1)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__500_v6_85_22'),2)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__500_v6_85_22'),3)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__500_v6_85_22'),4)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__500_v6_85_22'),5)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__500_v6_85_22'),6)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__500_v6_85_22'),8)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__500_v6_85_22'),9);
+// OPTIMIZATION: Using ImageCollection.max() instead of chained .where() operations
+var distances500haImages = ee.ImageCollection([
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__500_v6_85_22').selfMask().multiply(0).add(1),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__500_v6_85_22').selfMask().multiply(0).add(2),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__500_v6_85_22').selfMask().multiply(0).add(3),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__500_v6_85_22').selfMask().multiply(0).add(4),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__500_v6_85_22').selfMask().multiply(0).add(5),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__500_v6_85_22').selfMask().multiply(0).add(6),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__500_v6_85_22').selfMask().multiply(0).add(8),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__500_v6_85_22').selfMask().multiply(0).add(9),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior500ha_v5_85_22').selfMask().multiply(0).add(11)
+]);
+var distances500ha = distances500haImages.max().unmask(0);
 
-var distances1000ha = landcover_base.multiply(0)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior1000ha_v5_85_22'),12)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__1000_v6_85_22'),1)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__1000_v6_85_22'),2)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__1000_v6_85_22'),3)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__1000_v6_85_22'),4)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__1000_v6_85_22'),5)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__1000_v6_85_22'),6)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist20k__1000_v6_85_22'),7)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__1000_v6_85_22'),8)
-  .where(ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__1000_v6_85_22'),9);
+// OPTIMIZATION: Using ImageCollection.max() instead of chained .where() operations
+var distances1000haImages = ee.ImageCollection([
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist05k__1000_v6_85_22').selfMask().multiply(0).add(1),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist05k__1000_v6_85_22').selfMask().multiply(0).add(2),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist05k__1000_v6_85_22').selfMask().multiply(0).add(3),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist10k__1000_v6_85_22').selfMask().multiply(0).add(4),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist10k__1000_v6_85_22').selfMask().multiply(0).add(5),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist10k__1000_v6_85_22').selfMask().multiply(0).add(6),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag100__dist20k__1000_v6_85_22').selfMask().multiply(0).add(7),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag50__dist20k__1000_v6_85_22').selfMask().multiply(0).add(8),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/nat_uso_frag25__dist20k__1000_v6_85_22').selfMask().multiply(0).add(9),
+  ee.Image('projects/mapbiomas-workspace/DEGRADACAO/ISOLATION/BR_Distance/natural_mask_maior1000ha_v5_85_22').selfMask().multiply(0).add(12)
+]);
+var distances1000ha = distances1000haImages.max().unmask(0);
 
 // Adicionando os objetos ao dicionário assetsConfig
 var assetsConfig = {
