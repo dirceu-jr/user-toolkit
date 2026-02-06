@@ -34,17 +34,18 @@ var vis = {
 var country = ee.Image(assets.country);
 
 var collectionChacoLx = ee.ImageCollection(assets.mosaic.chaco_lx)
-    .filterMetadata('biome', 'equals', 'CHACO')
-    .filterMetadata('version', 'equals', '2')
-    .select(vis.bands);
+    .filter(ee.Filter.and(
+        ee.Filter.eq('biome', 'CHACO'),
+        ee.Filter.eq('version', '2')
+    ));
 
 var collectionChacoL7 = ee.ImageCollection(assets.mosaic.chaco_l7)
-    .filterMetadata('biome', 'equals', 'CHACO')
-    .filterMetadata('version', 'equals', '2')
-    .select(vis.bands);
+    .filter(ee.Filter.and(
+        ee.Filter.eq('biome', 'CHACO'),
+        ee.Filter.eq('version', '2')
+    ));
 
-var collectionAtfLx = ee.ImageCollection(assets.mosaic.atlantic_forest_lx)
-    .select(vis.bands);
+var collectionAtfLx = ee.ImageCollection(assets.mosaic.atlantic_forest_lx);
 
 var collectionPampaLx = ee.ImageCollection(assets.mosaic.pampa_lx)
     .map(
@@ -52,18 +53,17 @@ var collectionPampaLx = ee.ImageCollection(assets.mosaic.pampa_lx)
             return image.set('year', ee.Number.parse(image.get('year'), 10));
         }
     )
-    .filterMetadata('version', 'equals', '4')
-    .select(vis.bands);
+    .filter(ee.Filter.eq('version', '4'));
 
-var collectionCuyoPatg = ee.ImageCollection(assets.mosaic.cuyo_patagonia_lx)
-    .select(vis.bands);
+var collectionCuyoPatg = ee.ImageCollection(assets.mosaic.cuyo_patagonia_lx);
 
 var collection = collectionChacoL7
     .merge(collectionChacoLx)
     .merge(collectionAtfLx)
     .merge(collectionPampaLx)
     .merge(collectionCuyoPatg)
-    .filter(ee.Filter.eq('year', year));
+    .filter(ee.Filter.eq('year', year))
+    .select(vis.bands);
 
 var image = collection.mosaic().mask(country);
 
